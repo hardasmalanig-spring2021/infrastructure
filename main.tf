@@ -90,10 +90,27 @@ variable "db_name" {
   type = string
 }
 
-variable "aws_launch_configuration_name" { # required
+
+
+variable "ami_owners" {
+  type = list(any)
+}
+
+variable "s3_iam_profile_name" {
   type = string
 }
 
+variable "s3_iam_role_name" {
+  type = string
+}
+
+variable "s3_iam_policy_name" {
+  type = string
+}
+
+variable "key_name"{
+  type = string
+}
 
 # VPC
 resource "aws_vpc" "vpc" {
@@ -192,6 +209,7 @@ resource "aws_security_group" "application_security_group" {
     cidr_blocks = var.egressCIDRblock
   }
 
+
   tags = {
     Name = "application"
   }
@@ -237,7 +255,7 @@ resource "aws_s3_bucket" "s3_bucket" {
   lifecycle_rule {
     id      = "log"
     enabled = true
-    prefix = "log/"
+    prefix  = "log/"
     tags = {
       "rule"      = "log"
       "autoclean" = "true"
@@ -250,7 +268,7 @@ resource "aws_s3_bucket" "s3_bucket" {
   server_side_encryption_configuration {
     rule {
       apply_server_side_encryption_by_default {
-        sse_algorithm     = "aws:kms"
+        sse_algorithm = "aws:kms"
       }
     }
   }
@@ -264,17 +282,6 @@ resource "aws_s3_bucket" "s3_bucket" {
 resource "aws_db_subnet_group" "rds_subnet_group" {
   name       = var.subnet_group_name
   subnet_ids = aws_subnet.subnet.*.id
-}
-
-resource "aws_db_parameter_group" "db_parameter_ssl" {
-  name   = "rds-mysql-ssl"
-  family = "mysql5.7"
-
-  parameter {
-    name         = "performance_schema"
-    value        = "1"
-    apply_method = "pending-reboot"
-  }
 }
 
 resource "aws_db_instance" "rds_instance" {
@@ -292,14 +299,103 @@ resource "aws_db_instance" "rds_instance" {
   vpc_security_group_ids = [aws_security_group.database.id]
 
   # attach security group to RDS instance
-  allocated_storage    = 20
-  storage_type         = "gp2"
-  parameter_group_name = aws_db_parameter_group.db_parameter_ssl.name
+  allocated_storage   = 20
+  storage_type        = "gp2"
   skip_final_snapshot = true
-  storage_encrypted  = true
-  ca_cert_identifier = "rds-ca-2019"
+  storage_encrypted   = true
+
+
 }
 
-# resource "aws_launch_configuration" "launch_conf" {
-#    name = var.aws_launch_configuration_name
-#  }
+resource "aws_iam_instance_profile" "s3_profile" {
+  name = var.s3_iam_profile_name
+  role = aws_iam_role.role.name
+}
+
+resource "aws_iam_role" "role" {
+  name               = var.s3_iam_role_name
+  assume_role_policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Action": "sts:AssumeRole",
+      "Principal": {
+        "Service": "ec2.amazonaws.com"
+      },
+      "Effect": "Allow"
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_policy" "policy" {
+  name        = var.s3_iam_policy_name
+  description = "IAM policy for EC2 to access S3 bucket"
+
+  policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": 
+  [
+    {
+        "Effect": "Allow",
+        "Action": [
+            "s3:PutObject",
+            "s3:PutObjectAcl",
+            "s3:GetObject",
+            "s3:GetObjectAcl",
+            "s3:GetObjectVersion",
+            "s3:DeleteObject",
+            "s3:DeleteObjectVersion"
+        ],
+        "Resource": [
+          "arn:aws:s3:::${var.s3_bucket_name}",
+          "arn:aws:s3:::${var.s3_bucket_name}/*"
+          ]
+        
+    }
+  ]
+}
+EOF
+}
+
+resource "aws_iam_role_policy_attachment" "role-policy-attach" {
+  role       = aws_iam_role.role.name
+  policy_arn = aws_iam_policy.policy.arn
+}
+
+data "aws_ami" "ami" {
+  most_recent = true
+  owners      = var.ami_owners
+}
+
+resource "aws_instance" "web" {
+  ami                    = data.aws_ami.ami.id
+  instance_type          = "t3.micro"
+  subnet_id              = aws_subnet.subnet[0].id
+  vpc_security_group_ids = aws_security_group.application_security_group.*.id
+  key_name               = var.key_name
+    associate_public_ip_address = true
+  iam_instance_profile   = aws_iam_instance_profile.s3_profile.name
+  user_data = <<-EOF
+               #!/bin/bash
+               sudo echo export "Bucket_Name=${aws_s3_bucket.s3_bucket.bucket}" >> /etc/environment
+               sudo echo export "RDS_HOSTNAME=${aws_db_instance.rds_instance.address}" >> /etc/environment
+               sudo echo export "DBendpoint=${aws_db_instance.rds_instance.endpoint}" >> /etc/environment
+               sudo echo export "RDS_DB_NAME=${aws_db_instance.rds_instance.name}" >> /etc/environment
+               sudo echo export "RDS_USERNAME=${aws_db_instance.rds_instance.username}" >> /etc/environment
+               sudo echo export "RDS_PASSWORD=${aws_db_instance.rds_instance.password}" >> /etc/environment
+               
+               EOF
+ 
+  root_block_device {
+    volume_type = "gp2"
+    volume_size = 20
+    delete_on_termination = true
+  }
+  depends_on = [aws_s3_bucket.s3_bucket,aws_db_instance.rds_instance]
+}
+
+
