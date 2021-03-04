@@ -274,7 +274,7 @@ resource "aws_s3_bucket" "s3_bucket" {
   }
   tags = {
     Name = "S3 bucket"
-    # Environment = "dev"
+    Environment = "dev"
   }
 }
 
@@ -373,7 +373,7 @@ data "aws_ami" "ami" {
 
 resource "aws_instance" "web" {
   ami                    = data.aws_ami.ami.id
-  instance_type          = "t3.micro"
+  instance_type          = "t2.micro"
   subnet_id              = aws_subnet.subnet[0].id
   vpc_security_group_ids = aws_security_group.application_security_group.*.id
   key_name               = var.key_name
