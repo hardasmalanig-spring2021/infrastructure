@@ -605,8 +605,19 @@ data "aws_route53_zone" "selected" {
 
 resource "aws_route53_record" "www" {
   zone_id = data.aws_route53_zone.selected.zone_id
-  name    = "${data.aws_route53_zone.selected.name}"
+  name    = data.aws_route53_zone.selected.name
   type    = "A"
   ttl     = "60"
-  records = ["${aws_instance.web.public_ip}"]
+  records = [aws_instance.web.public_ip]
+}
+
+resource "aws_iam_role_policy_attachment" "AmazonCloudWatchAgent" {
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+    role       = aws_iam_role.role.name
+}
+
+
+resource "aws_iam_role_policy_attachment" "AmazonSSMAgent" {
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    role       = aws_iam_role.role.name
 }
