@@ -133,6 +133,31 @@ variable "dns" {
   type = string
 }
 
+variable "alarm_low_evaluation_period"{
+    type = string
+
+}
+variable "alarm_high_evaluation_period"{
+    type = string
+
+}
+variable "alarm_low_period"{
+    type = string
+
+}
+variable "alarm_high_period"{
+    type = string
+
+}
+variable "alarm_low_threshold"{
+    type = string
+
+}
+variable "alarm_high_threshold"{
+    type = string
+
+}
+
 data "aws_caller_identity" "current" {}
 locals {
   aws_user_account_id = data.aws_caller_identity.current.account_id
@@ -196,26 +221,29 @@ resource "aws_security_group" "application_security_group" {
 
   # allow ingress of port 22
   ingress {
-    cidr_blocks = var.ingressCIDRblock
+    /*cidr_blocks = var.ingressCIDRblock */
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
+    security_groups = aws_security_group.loadBalancer.id
   }
 
   # allow ingress of port 80
   ingress {
-    cidr_blocks = var.ingressCIDRblock
+   /* cidr_blocks = var.ingressCIDRblock */
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
+    security_groups = aws_security_group.loadBalancer.id
   }
 
   # allow ingress of port 443
   ingress {
-    cidr_blocks = var.ingressCIDRblock
+   /* cidr_blocks = var.ingressCIDRblock */
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
+    security_groups = aws_security_group.loadBalancer.id
   }
 
   ingress {
@@ -603,12 +631,24 @@ data "aws_route53_zone" "selected" {
   private_zone = false
 }
 
+# resource "aws_route53_record" "www" {
+#   zone_id = data.aws_route53_zone.selected.zone_id
+#   name    = data.aws_route53_zone.selected.name
+#   type    = "A"
+#   ttl     = "60"
+#   records = [aws_instance.web.public_ip]
+# }
+
 resource "aws_route53_record" "www" {
   zone_id = data.aws_route53_zone.selected.zone_id
   name    = data.aws_route53_zone.selected.name
   type    = "A"
-  ttl     = "60"
-  records = [aws_instance.web.public_ip]
+
+   alias {
+    name    = aws_lb.application-Load-Balancer.dns_name
+    zone_id = aws_lb.application-Load-Balancer.zone_id
+    evaluate_target_health = true
+  }
 }
 
 resource "aws_iam_role_policy_attachment" "AmazonCloudWatchAgent" {
@@ -620,4 +660,177 @@ resource "aws_iam_role_policy_attachment" "AmazonCloudWatchAgent" {
 resource "aws_iam_role_policy_attachment" "AmazonSSMAgent" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
     role       = aws_iam_role.role.name
+}
+
+
+resource "aws_launch_configuration" "as_conf" {
+  name                   = "asg_launch_config"
+  image_id               = data.aws_ami.ami.id
+  instance_type          = "t2.micro"
+  security_groups        = aws_security_group.application_security_group.id
+  key_name               = var.key_name
+  iam_instance_profile        = aws_iam_instance_profile.s3_profile.name
+  associate_public_ip_address = true
+  user_data = <<-EOF
+               #!/bin/bash
+               sudo echo export "Bucket_Name=${aws_s3_bucket.s3_bucket.bucket}" >> /etc/environment
+               sudo echo export "RDS_HOSTNAME=${aws_db_instance.rds_instance.address}" >> /etc/environment
+               sudo echo export "DBendpoint=${aws_db_instance.rds_instance.endpoint}" >> /etc/environment
+               sudo echo export "RDS_DB_NAME=${aws_db_instance.rds_instance.name}" >> /etc/environment
+               sudo echo export "RDS_USERNAME=${aws_db_instance.rds_instance.username}" >> /etc/environment
+               sudo echo export "RDS_PASSWORD=${aws_db_instance.rds_instance.password}" >> /etc/environment
+               
+               EOF
+
+  root_block_device {
+    volume_type           = "gp2"
+    volume_size           = 20
+    delete_on_termination = true
+  }
+  depends_on = [aws_s3_bucket.s3_bucket, aws_db_instance.rds_instance]
+}
+
+
+#Autoscaling Group
+resource "aws_autoscaling_group" "autoscaling" {
+  name                 = "autoscaling-group"
+  launch_configuration = aws_launch_configuration.as_conf.name
+  min_size             = 3
+  max_size             = 5
+  default_cooldown     = 60
+  desired_capacity     = 3
+  vpc_zone_identifier = aws_subnet.test_VPC_Subnet[0].id
+  target_group_arns = aws_lb_target_group.albTargetGroup.arn
+  tag {
+    key                 = "Name"
+    value               = "myEC2Instance"
+    propagate_at_launch = true
+  }
+}
+# load balancer target group
+resource "aws_lb_target_group" "albTargetGroup" {
+  name     = "albTargetGroup"
+  port     = "8080"
+  protocol = "HTTP"
+  vpc_id   = "${aws_vpc.test_VPC.id}"
+  tags = {
+    name = "albTargetGroup"
+  }
+  health_check {
+    healthy_threshold   = 3
+    unhealthy_threshold = 5
+    timeout             = 5
+    interval            = 30
+    path                = "/healthstatus"
+    port                = "8080"
+    matcher             = "200"
+  }
+}
+
+#Autoscalling Policy
+resource "aws_autoscaling_policy" "WebServerScaleUpPolicy" {
+  name                   = "WebServerScaleUpPolicy"
+  adjustment_type        = "ChangeInCapacity"
+  autoscaling_group_name = "${aws_autoscaling_group.autoscaling.name}"
+  cooldown               = 60
+  scaling_adjustment     = 1
+}
+
+resource "aws_autoscaling_policy" "WebServerScaleDownPolicy" {
+  name                   = "WebServerScaleDownPolicy"
+  adjustment_type        = "ChangeInCapacity"
+  autoscaling_group_name = aws_autoscaling_group.autoscaling.name
+  cooldown               = 60
+  scaling_adjustment     = -1
+}
+
+resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
+  alarm_description = "Scale-down if CPU < 70% for 10 minutes"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  statistic           = "Average"
+  period              = var.alarm_low_period
+  evaluation_periods  = var.alarm_low_evaluation_period
+  threshold           = var.alarm_low_threshold
+  alarm_name          = "CPUAlarmLow"
+  alarm_actions     = aws_autoscaling_policy.WebServerScaleDownPolicy.arn
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.autoscaling.name
+  }
+  comparison_operator = "LessThanThreshold"
+
+
+}
+
+resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
+  alarm_description = "Scale-up if CPU > 90% for 10 minutes"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  statistic           = "Average"
+  period              = var.alarm_high_period
+  evaluation_periods  = var.alarm_high_evaluation_period
+  threshold           = var.alarm_high_threshold
+  alarm_name          = "CPUAlarmHigh"
+  alarm_actions     = aws_autoscaling_policy.WebServerScaleUpPolicy.arn
+  dimensions = {
+  AutoScalingGroupName = aws_autoscaling_group.autoscaling.name
+  }
+  comparison_operator = "GreaterThanThreshold"
+
+
+}
+
+
+
+#Load Balancer Security Group
+resource "aws_security_group" "loadBalancer" {
+  name   = "loadBalance_security_group"
+  vpc_id = aws_vpc.test_VPC.id
+  ingress {
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+    ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = {
+    Name        = "LoadBalancer Security Group"
+    Environment = var.aws_profile_name
+  }
+}
+
+
+#Load balancer
+resource "aws_lb" "application-Load-Balancer" {
+  name               = "application-Load-Balancer"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = aws_security_group.loadBalancer.id
+  subnets            = aws_subnet.test_VPC_Subnet.*.id
+  ip_address_type    = "ipv4"
+  tags = {
+    Environment = var.aws_profile_name
+    Name        = "applicationLoadBalancer"
+  }
+}
+
+resource "aws_lb_listener" "webapp-Listener" {
+  load_balancer_arn = aws_lb.application-Load-Balancer.arn
+  port              = "80"
+  protocol          = "HTTP"
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.albTargetGroup.arn
+  }
 }
