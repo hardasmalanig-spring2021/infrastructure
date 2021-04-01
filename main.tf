@@ -221,11 +221,11 @@ resource "aws_security_group" "application_security_group" {
 
   # allow ingress of port 22
   ingress {
-    /*cidr_blocks = var.ingressCIDRblock */
+    cidr_blocks = var.ingressCIDRblock 
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    security_groups = aws_security_group.loadBalancer.id
+    
   }
 
   # allow ingress of port 80
@@ -234,7 +234,7 @@ resource "aws_security_group" "application_security_group" {
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
-    security_groups = aws_security_group.loadBalancer.id
+    security_groups = [aws_security_group.loadBalancer.id]
   }
 
   # allow ingress of port 443
@@ -243,7 +243,7 @@ resource "aws_security_group" "application_security_group" {
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    security_groups = aws_security_group.loadBalancer.id
+    security_groups = [aws_security_group.loadBalancer.id]
   }
 
   ingress {
@@ -251,7 +251,8 @@ resource "aws_security_group" "application_security_group" {
     from_port   = 8080
     to_port     = 8080
     protocol    = "tcp"
-    cidr_blocks = var.ingressCIDRblock
+    security_groups = [aws_security_group.loadBalancer.id]
+   // cidr_blocks = var.ingressCIDRblock
 
   }
 
@@ -429,36 +430,36 @@ data "aws_ami" "ami" {
   owners      = var.ami_owners
 }
 
-resource "aws_instance" "web" {
-  ami                    = data.aws_ami.ami.id
-  instance_type          = "t2.micro"
-  subnet_id              = aws_subnet.subnet[0].id
-  vpc_security_group_ids = aws_security_group.application_security_group.*.id
-  key_name               = var.key_name
-    associate_public_ip_address = true
-  iam_instance_profile   = aws_iam_instance_profile.s3_profile.name
-  user_data = <<-EOF
-               #!/bin/bash
-               sudo echo export "Bucket_Name=${aws_s3_bucket.s3_bucket.bucket}" >> /etc/environment
-               sudo echo export "RDS_HOSTNAME=${aws_db_instance.rds_instance.address}" >> /etc/environment
-               sudo echo export "DBendpoint=${aws_db_instance.rds_instance.endpoint}" >> /etc/environment
-               sudo echo export "RDS_DB_NAME=${aws_db_instance.rds_instance.name}" >> /etc/environment
-               sudo echo export "RDS_USERNAME=${aws_db_instance.rds_instance.username}" >> /etc/environment
-               sudo echo export "RDS_PASSWORD=${aws_db_instance.rds_instance.password}" >> /etc/environment
+# resource "aws_instance" "web" {
+#   ami                    = data.aws_ami.ami.id
+#   instance_type          = "t2.micro"
+#   subnet_id              = aws_subnet.subnet[0].id
+#   vpc_security_group_ids = aws_security_group.application_security_group.*.id
+#   key_name               = var.key_name
+#     associate_public_ip_address = true
+#   iam_instance_profile   = aws_iam_instance_profile.s3_profile.name
+#   user_data = <<-EOF
+#                #!/bin/bash
+#                sudo echo export "Bucket_Name=${aws_s3_bucket.s3_bucket.bucket}" >> /etc/environment
+#                sudo echo export "RDS_HOSTNAME=${aws_db_instance.rds_instance.address}" >> /etc/environment
+#                sudo echo export "DBendpoint=${aws_db_instance.rds_instance.endpoint}" >> /etc/environment
+#                sudo echo export "RDS_DB_NAME=${aws_db_instance.rds_instance.name}" >> /etc/environment
+#                sudo echo export "RDS_USERNAME=${aws_db_instance.rds_instance.username}" >> /etc/environment
+#                sudo echo export "RDS_PASSWORD=${aws_db_instance.rds_instance.password}" >> /etc/environment
                
-               EOF
+#                EOF
  
-  root_block_device {
-    volume_type = "gp2"
-    volume_size = 20
-    delete_on_termination = true
-  }
-  depends_on = [aws_s3_bucket.s3_bucket,aws_db_instance.rds_instance]
+#   root_block_device {
+#     volume_type = "gp2"
+#     volume_size = 20
+#     delete_on_termination = true
+#   }
+#   depends_on = [aws_s3_bucket.s3_bucket,aws_db_instance.rds_instance]
 
-  tags = {
-    Name = var.ec2_name
-  }
-}
+#   tags = {
+#     Name = var.ec2_name
+#   }
+# }
 
 # Create policy for Codedeploy running on EC2 to access s3 bucket
 resource "aws_iam_role_policy" "codeDeploy_ec2_s3" {
@@ -595,8 +596,15 @@ resource "aws_codedeploy_app" "code_deploy_app" {
 resource "aws_codedeploy_deployment_group" "code_deploy_deployment_group" {
   app_name               = aws_codedeploy_app.code_deploy_app.name
   deployment_group_name  = "csye6225-webapp-deployment"
-  deployment_config_name = "CodeDeployDefault.AllAtOnce"
+  deployment_config_name = "CodeDeployDefault.OneAtATime"
   service_role_arn       = aws_iam_role.code_deploy_role.arn
+  autoscaling_groups = [ aws_autoscaling_group.autoscaling.name ]
+
+  load_balancer_info {
+    target_group_info {
+      name = aws_lb_target_group.albTargetGroup.name
+    }
+  }
 
   ec2_tag_filter {
     key   = "Name"
@@ -605,7 +613,7 @@ resource "aws_codedeploy_deployment_group" "code_deploy_deployment_group" {
   }
 
   deployment_style {
-    deployment_option = "WITHOUT_TRAFFIC_CONTROL"
+    deployment_option = "WITH_TRAFFIC_CONTROL"
     deployment_type   = "IN_PLACE"
   }
 
@@ -667,7 +675,7 @@ resource "aws_launch_configuration" "as_conf" {
   name                   = "asg_launch_config"
   image_id               = data.aws_ami.ami.id
   instance_type          = "t2.micro"
-  security_groups        = aws_security_group.application_security_group.id
+  security_groups        = [aws_security_group.application_security_group.id]
   key_name               = var.key_name
   iam_instance_profile        = aws_iam_instance_profile.s3_profile.name
   associate_public_ip_address = true
@@ -699,11 +707,11 @@ resource "aws_autoscaling_group" "autoscaling" {
   max_size             = 5
   default_cooldown     = 60
   desired_capacity     = 3
-  vpc_zone_identifier = aws_subnet.test_VPC_Subnet[0].id
-  target_group_arns = aws_lb_target_group.albTargetGroup.arn
+  vpc_zone_identifier = aws_subnet.subnet.*.id
+  target_group_arns =[ aws_lb_target_group.albTargetGroup.arn]
   tag {
     key                 = "Name"
-    value               = "myEC2Instance"
+    value               = var.ec2_name
     propagate_at_launch = true
   }
 }
@@ -712,7 +720,7 @@ resource "aws_lb_target_group" "albTargetGroup" {
   name     = "albTargetGroup"
   port     = "8080"
   protocol = "HTTP"
-  vpc_id   = "${aws_vpc.test_VPC.id}"
+  vpc_id   = aws_vpc.vpc.id
   tags = {
     name = "albTargetGroup"
   }
@@ -731,7 +739,7 @@ resource "aws_lb_target_group" "albTargetGroup" {
 resource "aws_autoscaling_policy" "WebServerScaleUpPolicy" {
   name                   = "WebServerScaleUpPolicy"
   adjustment_type        = "ChangeInCapacity"
-  autoscaling_group_name = "${aws_autoscaling_group.autoscaling.name}"
+  autoscaling_group_name = aws_autoscaling_group.autoscaling.name
   cooldown               = 60
   scaling_adjustment     = 1
 }
@@ -753,7 +761,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
   evaluation_periods  = var.alarm_low_evaluation_period
   threshold           = var.alarm_low_threshold
   alarm_name          = "CPUAlarmLow"
-  alarm_actions     = aws_autoscaling_policy.WebServerScaleDownPolicy.arn
+  alarm_actions     = [aws_autoscaling_policy.WebServerScaleDownPolicy.arn]
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.autoscaling.name
   }
@@ -771,7 +779,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
   evaluation_periods  = var.alarm_high_evaluation_period
   threshold           = var.alarm_high_threshold
   alarm_name          = "CPUAlarmHigh"
-  alarm_actions     = aws_autoscaling_policy.WebServerScaleUpPolicy.arn
+  alarm_actions     = [aws_autoscaling_policy.WebServerScaleUpPolicy.arn]
   dimensions = {
   AutoScalingGroupName = aws_autoscaling_group.autoscaling.name
   }
@@ -785,7 +793,7 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
 #Load Balancer Security Group
 resource "aws_security_group" "loadBalancer" {
   name   = "loadBalance_security_group"
-  vpc_id = aws_vpc.test_VPC.id
+  vpc_id = aws_vpc.vpc.id
   ingress {
     from_port   = 443
     to_port     = 443
@@ -816,8 +824,8 @@ resource "aws_lb" "application-Load-Balancer" {
   name               = "application-Load-Balancer"
   internal           = false
   load_balancer_type = "application"
-  security_groups    = aws_security_group.loadBalancer.id
-  subnets            = aws_subnet.test_VPC_Subnet.*.id
+  security_groups    = [aws_security_group.loadBalancer.id]
+  subnets            = aws_subnet.subnet.*.id
   ip_address_type    = "ipv4"
   tags = {
     Environment = var.aws_profile_name
