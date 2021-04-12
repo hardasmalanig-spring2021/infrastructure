@@ -108,7 +108,7 @@ variable "s3_iam_policy_name" {
   type = string
 }
 
-variable "key_name"{
+variable "key_name" {
   type = string
 }
 
@@ -133,42 +133,42 @@ variable "dns" {
   type = string
 }
 
-variable "alarm_low_evaluation_period"{
-    type = string
+variable "alarm_low_evaluation_period" {
+  type = string
 
 }
-variable "alarm_high_evaluation_period"{
-    type = string
+variable "alarm_high_evaluation_period" {
+  type = string
 
 }
-variable "alarm_low_period"{
-    type = string
+variable "alarm_low_period" {
+  type = string
 
 }
-variable "alarm_high_period"{
-    type = string
+variable "alarm_high_period" {
+  type = string
 
 }
-variable "alarm_low_threshold"{
-    type = string
+variable "alarm_low_threshold" {
+  type = string
 
 }
-variable "alarm_high_threshold"{
-    type = string
+variable "alarm_high_threshold" {
+  type = string
 
 }
 
 
-variable "dynamo_dbname"{
+variable "dynamo_dbname" {
   type = string
 }
 
-variable "dynamo_read_capacity"{
-  type=number
+variable "dynamo_read_capacity" {
+  type = number
 }
 
 variable "dynamo_write_capacity" {
-  type=number
+  type = number
 }
 
 
@@ -234,39 +234,39 @@ resource "aws_security_group" "application_security_group" {
   name   = "application"
 
   # allow ingress of port 22
-  ingress {
-    cidr_blocks = var.ingressCIDRblock 
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    
-  }
+  # ingress {
+  #   cidr_blocks = var.ingressCIDRblock 
+  #   from_port   = 22
+  #   to_port     = 22
+  #   protocol    = "tcp"
+
+  # }
 
   # allow ingress of port 80
-  ingress {
-   /* cidr_blocks = var.ingressCIDRblock */
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    security_groups = [aws_security_group.loadBalancer.id]
-  }
+  # ingress {
+  #  /* cidr_blocks = var.ingressCIDRblock */
+  #   from_port   = 80
+  #   to_port     = 80
+  #   protocol    = "tcp"
+  #   security_groups = [aws_security_group.loadBalancer.id]
+  # }
 
   # allow ingress of port 443
   ingress {
-   /* cidr_blocks = var.ingressCIDRblock */
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
+    /* cidr_blocks = var.ingressCIDRblock */
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
     security_groups = [aws_security_group.loadBalancer.id]
   }
 
   ingress {
-    description = "TLS from VPC"
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
+    description     = "TLS from VPC"
+    from_port       = 8080
+    to_port         = 8080
+    protocol        = "tcp"
     security_groups = [aws_security_group.loadBalancer.id]
-   // cidr_blocks = var.ingressCIDRblock
+    // cidr_blocks = var.ingressCIDRblock
 
   }
 
@@ -342,7 +342,7 @@ resource "aws_s3_bucket" "s3_bucket" {
     }
   }
   tags = {
-    Name = "S3 bucket"
+    Name        = "S3 bucket"
     Environment = "dev"
   }
 }
@@ -355,7 +355,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 
 resource "aws_db_instance" "rds_instance" {
   engine                 = "mysql"
-  engine_version         = "5.7"
+  engine_version         = "8.0.17"
   instance_class         = var.db_instance_class
   multi_az               = false
   identifier             = var.db_identifier
@@ -366,14 +366,14 @@ resource "aws_db_instance" "rds_instance" {
   publicly_accessible    = false
   name                   = var.db_name
   vpc_security_group_ids = [aws_security_group.database.id]
-
+  parameter_group_name   = "rds-mysql"
   # attach security group to RDS instance
   allocated_storage   = 20
   storage_type        = "gp2"
   skip_final_snapshot = true
   storage_encrypted   = true
-
-
+  kms_key_id          = aws_kms_key.rds_key.arn
+  depends_on          = [aws_db_parameter_group.default]
 }
 
 resource "aws_iam_instance_profile" "s3_profile" {
@@ -398,7 +398,7 @@ resource "aws_iam_role" "role" {
 }
 EOF
 
-tags = {
+  tags = {
     Name = "CodeDeployEC2ServiceRole"
   }
 }
@@ -460,9 +460,9 @@ data "aws_ami" "ami" {
 #                sudo echo export "RDS_DB_NAME=${aws_db_instance.rds_instance.name}" >> /etc/environment
 #                sudo echo export "RDS_USERNAME=${aws_db_instance.rds_instance.username}" >> /etc/environment
 #                sudo echo export "RDS_PASSWORD=${aws_db_instance.rds_instance.password}" >> /etc/environment
-               
+
 #                EOF
- 
+
 #   root_block_device {
 #     volume_type = "gp2"
 #     volume_size = 20
@@ -615,7 +615,7 @@ resource "aws_codedeploy_deployment_group" "code_deploy_deployment_group" {
   deployment_group_name  = "csye6225-webapp-deployment"
   deployment_config_name = "CodeDeployDefault.OneAtATime"
   service_role_arn       = aws_iam_role.code_deploy_role.arn
-  autoscaling_groups = [ aws_autoscaling_group.autoscaling.name ]
+  autoscaling_groups     = [aws_autoscaling_group.autoscaling.name]
 
   load_balancer_info {
     target_group_info {
@@ -669,34 +669,34 @@ resource "aws_route53_record" "www" {
   name    = data.aws_route53_zone.selected.name
   type    = "A"
 
-   alias {
-    name    = aws_lb.application-Load-Balancer.dns_name
-    zone_id = aws_lb.application-Load-Balancer.zone_id
+  alias {
+    name                   = aws_lb.application-Load-Balancer.dns_name
+    zone_id                = aws_lb.application-Load-Balancer.zone_id
     evaluate_target_health = true
   }
 }
 
 resource "aws_iam_role_policy_attachment" "AmazonCloudWatchAgent" {
   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-    role       = aws_iam_role.role.name
+  role       = aws_iam_role.role.name
 }
 
 
 resource "aws_iam_role_policy_attachment" "AmazonSSMAgent" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-    role       = aws_iam_role.role.name
+  role       = aws_iam_role.role.name
 }
 
 
 resource "aws_launch_configuration" "as_conf" {
-  name                   = "asg_launch_config"
-  image_id               = data.aws_ami.ami.id
-  instance_type          = "t2.micro"
-  security_groups        = [aws_security_group.application_security_group.id]
-  key_name               = var.key_name
+  name                        = "asg_launch_config"
+  image_id                    = data.aws_ami.ami.id
+  instance_type               = "t2.micro"
+  security_groups             = [aws_security_group.application_security_group.id]
+  key_name                    = var.key_name
   iam_instance_profile        = aws_iam_instance_profile.s3_profile.name
   associate_public_ip_address = true
-  user_data = <<-EOF
+  user_data                   = <<-EOF
                #!/bin/bash
                sudo echo export "Bucket_Name=${aws_s3_bucket.s3_bucket.bucket}" >> /etc/environment
                sudo echo export "RDS_HOSTNAME=${aws_db_instance.rds_instance.address}" >> /etc/environment
@@ -714,6 +714,7 @@ resource "aws_launch_configuration" "as_conf" {
     volume_type           = "gp2"
     volume_size           = 20
     delete_on_termination = true
+    encrypted             = true
   }
   depends_on = [aws_s3_bucket.s3_bucket, aws_db_instance.rds_instance]
 }
@@ -727,8 +728,8 @@ resource "aws_autoscaling_group" "autoscaling" {
   max_size             = 5
   default_cooldown     = 60
   desired_capacity     = 3
-  vpc_zone_identifier = aws_subnet.subnet.*.id
-  target_group_arns =[ aws_lb_target_group.albTargetGroup.arn]
+  vpc_zone_identifier  = aws_subnet.subnet.*.id
+  target_group_arns    = [aws_lb_target_group.albTargetGroup.arn]
   tag {
     key                 = "Name"
     value               = var.ec2_name
@@ -773,15 +774,15 @@ resource "aws_autoscaling_policy" "WebServerScaleDownPolicy" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
-  alarm_description = "Scale-down if CPU < 70% for 10 minutes"
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  statistic           = "Average"
-  period              = var.alarm_low_period
-  evaluation_periods  = var.alarm_low_evaluation_period
-  threshold           = var.alarm_low_threshold
-  alarm_name          = "CPUAlarmLow"
-  alarm_actions     = [aws_autoscaling_policy.WebServerScaleDownPolicy.arn]
+  alarm_description  = "Scale-down if CPU < 70% for 10 minutes"
+  metric_name        = "CPUUtilization"
+  namespace          = "AWS/EC2"
+  statistic          = "Average"
+  period             = var.alarm_low_period
+  evaluation_periods = var.alarm_low_evaluation_period
+  threshold          = var.alarm_low_threshold
+  alarm_name         = "CPUAlarmLow"
+  alarm_actions      = [aws_autoscaling_policy.WebServerScaleDownPolicy.arn]
   dimensions = {
     AutoScalingGroupName = aws_autoscaling_group.autoscaling.name
   }
@@ -791,17 +792,17 @@ resource "aws_cloudwatch_metric_alarm" "CPUAlarmLow" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "CPUAlarmHigh" {
-  alarm_description = "Scale-up if CPU > 90% for 10 minutes"
-  metric_name         = "CPUUtilization"
-  namespace           = "AWS/EC2"
-  statistic           = "Average"
-  period              = var.alarm_high_period
-  evaluation_periods  = var.alarm_high_evaluation_period
-  threshold           = var.alarm_high_threshold
-  alarm_name          = "CPUAlarmHigh"
-  alarm_actions     = [aws_autoscaling_policy.WebServerScaleUpPolicy.arn]
+  alarm_description  = "Scale-up if CPU > 90% for 10 minutes"
+  metric_name        = "CPUUtilization"
+  namespace          = "AWS/EC2"
+  statistic          = "Average"
+  period             = var.alarm_high_period
+  evaluation_periods = var.alarm_high_evaluation_period
+  threshold          = var.alarm_high_threshold
+  alarm_name         = "CPUAlarmHigh"
+  alarm_actions      = [aws_autoscaling_policy.WebServerScaleUpPolicy.arn]
   dimensions = {
-  AutoScalingGroupName = aws_autoscaling_group.autoscaling.name
+    AutoScalingGroupName = aws_autoscaling_group.autoscaling.name
   }
   comparison_operator = "GreaterThanThreshold"
 
@@ -820,12 +821,12 @@ resource "aws_security_group" "loadBalancer" {
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
-    ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  #   ingress {
+  #   from_port   = 80
+  #   to_port     = 80
+  #   protocol    = "tcp"
+  #   cidr_blocks = ["0.0.0.0/0"]
+  # }
   egress {
     from_port   = 0
     to_port     = 0
@@ -855,8 +856,9 @@ resource "aws_lb" "application-Load-Balancer" {
 
 resource "aws_lb_listener" "webapp-Listener" {
   load_balancer_arn = aws_lb.application-Load-Balancer.arn
-  port              = "80"
-  protocol          = "HTTP"
+  port              = "443"
+  protocol          = "HTTPS"
+  certificate_arn   = data.aws_acm_certificate.aws_ssl_certificate.arn
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.albTargetGroup.arn
@@ -972,28 +974,28 @@ data "archive_file" "lambda_zip" {
 
 
 resource "aws_s3_bucket_object" "object" {
-  bucket = "codedeploy.${var.aws_profile_name}.${var.domain_name}"
-  key    = "lambda_function.zip"
-  source = "./lambda_function.zip"
+  bucket     = "codedeploy.${var.aws_profile_name}.${var.domain_name}"
+  key        = "lambda_function.zip"
+  source     = "./lambda_function.zip"
   depends_on = [data.archive_file.lambda_zip]
 }
 
 resource "aws_lambda_function" "sns_lambda_email" {
-  s3_bucket = "codedeploy.${var.aws_profile_name}.${var.domain_name}"
-  s3_key    = "lambda_function.zip"
-  function_name    = "lambda_function_name"
-  role             = aws_iam_role.iam_for_lambda.arn
-  handler          = "index.handler"
-  runtime          = "nodejs10.x"
-  publish          = true
+  s3_bucket     = "codedeploy.${var.aws_profile_name}.${var.domain_name}"
+  s3_key        = "lambda_function.zip"
+  function_name = "lambda_function_name"
+  role          = aws_iam_role.iam_for_lambda.arn
+  handler       = "index.handler"
+  runtime       = "nodejs10.x"
+  publish       = true
   environment {
     variables = {
       timeToLive = "5"
-      tableName = var.dynamo_dbname
-      
+      tableName  = var.dynamo_dbname
+
     }
   }
-   depends_on = [aws_s3_bucket_object.object]
+  depends_on = [aws_s3_bucket_object.object]
 }
 
 resource "aws_sns_topic_subscription" "lambda" {
@@ -1136,7 +1138,7 @@ resource "aws_codedeploy_deployment_group" "lambda_code_deploy_deployment_group"
     deployment_option = "WITH_TRAFFIC_CONTROL"
     deployment_type   = "BLUE_GREEN"
   }
-  
+
   depends_on = [aws_codedeploy_app.lambda_code_deploy_app]
 }
 
@@ -1176,4 +1178,93 @@ resource "aws_lambda_alias" "lambda_alias" {
   name             = "lamda_deployment"
   function_name    = aws_lambda_function.sns_lambda_email.arn
   function_version = aws_lambda_function.sns_lambda_email.version
+}
+
+
+# rds parameter group to turn the performance_schema on 
+
+resource "aws_db_parameter_group" "default" {
+  name   = "rds-mysql"
+  family = "mysql8.0"
+
+  parameter {
+    name         = "performance_schema"
+    value        = true
+    apply_method = "pending-reboot"
+  }
+}
+
+data "aws_acm_certificate" "aws_ssl_certificate" {
+  domain   = "${var.aws_profile_name}.${var.dns}"
+  statuses = ["ISSUED"]
+}
+
+resource "aws_kms_key" "ebs_key" {
+  description             = "ebs_block_key"
+  deletion_window_in_days = 10
+  policy                  = <<EOF
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+              "Sid": "Enable IAM User Permissions",
+              "Effect": "Allow",
+              "Principal": {
+                  "AWS": "arn:aws:iam::${local.aws_user_account_id}:root"
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+      },
+      {
+        "Sid": "Allow service-linked role use of the CMK",
+        "Effect": "Allow",
+        "Principal": {
+            "AWS": [
+                "arn:aws:iam::${local.aws_user_account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
+            ]
+        },
+        "Action": [
+            "kms:Encrypt",
+            "kms:Decrypt",
+            "kms:ReEncrypt*",
+            "kms:GenerateDataKey*",
+            "kms:DescribeKey"
+        ],
+        "Resource": "*"
+      },
+      {
+        "Sid": "Allow attachment of persistent resources",
+        "Effect": "Allow",
+        "Principal": {
+            "AWS": [
+                "arn:aws:iam::${local.aws_user_account_id}:role/aws-service-role/autoscaling.amazonaws.com/AWSServiceRoleForAutoScaling"
+            ]
+        },
+        "Action": [
+            "kms:CreateGrant"
+        ],
+        "Resource": "*",
+        "Condition": {
+            "Bool": {
+                "kms:GrantIsForAWSResource": true
+            }
+          }
+      }
+    ]
+  }
+  EOF
+
+  tags = {
+    Name = "ebs_key"
+  }
+}
+
+resource "aws_ebs_default_kms_key" "example" {
+  key_arn = aws_kms_key.ebs_key.arn
+}
+
+
+resource "aws_kms_key" "rds_key" {
+  description             = "rds_key"
+  deletion_window_in_days = 10
 }
